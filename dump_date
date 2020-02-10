@@ -1,0 +1,72 @@
+#!/usr/bin/python3
+import psycopg2
+import datetime
+import sys
+from tqdm import tqdm
+import re
+import time
+import os
+
+conn = psycopg2.connect(dbname='', user='', 
+                        password='', host='')
+
+
+tables = ['history', 'history_uint', 'history_str', 'history_text', 'history_log', 'trends_uint', 'trends']
+
+
+def get_data(table, minimal, maximum, name):
+    cursor = conn.cursor()
+    query  = "select * FROM "+table+" where age(to_timestamp("+table+".clock)) > interval '"+maximum+" days' and age(to_timestamp("+table+".clock)) < interval '"+minimal+" days';"
+    cursor.execute(query)
+    dump = ''
+    file = open(name, 'a')
+    for row in cursor:
+        data = list(row)
+        for i in range(len(data)):
+            typ = type(data[i])
+            if not typ==int and not typ==str:
+                data[i] = float(data[i])
+                data[i] = str(data[i])
+        data = tuple(data)
+        dump+="INSERT INTO "+table+" VALUES " + str(data) + ";\n"
+    file.write(dump)
+    file.close()
+    cursor.close()
+
+
+def delete_data(table, minimal, maximum):
+    cursor = conn.cursor()
+    query = "DELETE FROM "+table+" where age(to_timestamp("+table+".clock)) > interval '"+maximum+" days' and age(to_timestamp("+table+".clock)) < interval '"+minimal+" days';"
+    cursor.execute(query)
+    conn.commit()
+    cursor.close()
+
+
+def get_interval(minimal, maximum):
+    minimal = minimal.split('-')
+    maximum = maximum.split('-')
+    today = datetime.date.today()
+    minimal = today - datetime.date(int(minimal[0]), int(minimal[1]), int(minimal[2]))
+    maximum = today - datetime.date(int(maximum[0]), int(maximum[1]), int(maximum[2]))
+    minimal = str(minimal).split(' ')[0]
+    maximum = str(maximum).split(' ')[0]
+    maximum = str(int(maximum)-1)
+    minimal = str(int(minimal)+1)
+    return (minimal, maximum)
+
+
+def main():
+    minimal = sys.argv[1]
+    maximum = sys.argv[2]
+    t = time.asctime()
+    t = re.sub(' ', '_', t)
+    name = minimal+'_'+maximum+'_'+t+'.sql'
+    date = get_interval(minimal, maximum)
+    for table in tqdm(tables):
+        get_data(table, date[0], date[1], name)
+    for table in tqdm(tables):
+        delete_data(table, date[0], date[1])
+    
+
+if __name__ == '__main__':
+	main()
